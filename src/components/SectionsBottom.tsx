@@ -349,7 +349,7 @@ export function CTA() {
           <div className="lg:col-span-7">
             <Reveal><div className="eyebrow text-cream/50">Blocco 8 — Azioni di coinvolgimento</div></Reveal>
             <Reveal delay={80}>
-              <h2 className="display display-indent mt-6 text-5xl sm:text-7xl lg:text-8xl"><span>Entra</span><span>nella rete</span></h2>
+              <h2 className="display display-indent mt-6 text-5xl sm:text-7xl lg:text-8xl"><span>Entra</span><span>nel pilota</span></h2>
             </Reveal>
             <Reveal delay={160}>
               <p className="mt-8 max-w-xl text-base md:text-lg text-cream/70 leading-relaxed">
