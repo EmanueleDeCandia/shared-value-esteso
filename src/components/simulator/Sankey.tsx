@@ -9,8 +9,8 @@ export type Focus =
   | { type: 'cell'; i: number; j: number }
   | null;
 
-interface NodeExtra { id: string; kind: 'L' | 'HUB' | 'P' | 'R'; idx: number; label: string; sub?: string }
-interface LinkExtra { kind: 'C' | 'S' | 'D' | 'SP'; i: number; j: number }
+interface NodeExtra { id: string; kind: 'L' | 'HUB' | 'IND' | 'P' | 'R'; idx: number; label: string; sub?: string }
+interface LinkExtra { kind: 'C' | 'S' | 'IND' | 'D' | 'SP'; i: number; j: number }
 
 type N = SankeyNode<NodeExtra, LinkExtra>;
 type L = SankeyLink<NodeExtra, LinkExtra>;
@@ -59,16 +59,24 @@ export default function Sankey({
     const activeIdx = result.partners.map((p, i) => (p.active && p.P > 0 ? i : -1)).filter((i) => i >= 0);
 
     activeIdx.forEach((i) => nodes.push({ id: `L${i}`, kind: 'L', idx: i, label: PARTNERS[i].name, sub: `C${i + 1}` }));
-    const hubValue = activeIdx.reduce((a, i) => a + Math.max(0, result.partners[i].P - result.partners[i].C), 0);
-    if (hubValue > 0) nodes.push({ id: 'HUB', kind: 'HUB', idx: -1, label: 'Hub Startup', sub: 'Co-investimento Sᵢ + indotto' });
+    const split = activeIdx.map((i) => {
+      const p = result.partners[i];
+      const cLink = Math.min(p.C, p.P);
+      const sLink = Math.min(p.S, Math.max(0, p.P - cLink));
+      const indLink = Math.max(0, p.P - cLink - sLink);
+      return { i, cLink, sLink, indLink };
+    });
+    const hubValue = split.reduce((a, x) => a + x.sLink, 0);
+    const indValue = split.reduce((a, x) => a + x.indLink, 0);
+    if (hubValue > 0) nodes.push({ id: 'HUB', kind: 'HUB', idx: -1, label: 'Hub Startup', sub: 'Co-investimento Sᵢ' });
+    if (indValue > 0) nodes.push({ id: 'IND', kind: 'IND', idx: -1, label: 'Indotto Turismo + Risparmio Pubblico', sub: '2,408× + R_pub' });
     POOL_ORDER.filter((i) => activeIdx.includes(i)).forEach((i) => nodes.push({ id: `P${i}`, kind: 'P', idx: i, label: `Pool P${i + 1}`, sub: PARTNERS[i].short }));
     activeIdx.forEach((j) => nodes.push({ id: `R${j}`, kind: 'R', idx: j, label: PARTNERS[j].name, sub: `V esteso ${j + 1}` }));
 
-    activeIdx.forEach((i) => {
-      const p = result.partners[i];
-      if (p.C > 0) links.push({ source: `L${i}`, target: `P${i}`, value: p.C, kind: 'C', i, j: i });
-      const s = p.P - p.C;
-      if (s > 0) links.push({ source: 'HUB', target: `P${i}`, value: s, kind: 'S', i, j: i });
+    split.forEach(({ i, cLink, sLink, indLink }) => {
+      if (cLink > 0) links.push({ source: `L${i}`, target: `P${i}`, value: cLink, kind: 'C', i, j: i });
+      if (sLink > 0) links.push({ source: 'HUB', target: `P${i}`, value: sLink, kind: 'S', i, j: i });
+      if (indLink > 0) links.push({ source: 'IND', target: `P${i}`, value: indLink, kind: 'IND', i, j: i });
       activeIdx.forEach((j) => {
         const v = result.matrix[i][j];
         if (v > 0) links.push({ source: `P${i}`, target: `R${j}`, value: v, kind: i === j ? 'D' : 'SP', i, j });
@@ -97,7 +105,7 @@ export default function Sankey({
     if (!graph) return new Map<string, number>();
     const all = graph.nodes as N[];
     const left = resolveLabelY(
-      all.filter((n) => n.kind === 'L' || n.kind === 'HUB'),
+      all.filter((n) => n.kind === 'L' || n.kind === 'HUB' || n.kind === 'IND'),
       32,
       38,
       H - 34,
@@ -126,6 +134,7 @@ export default function Sankey({
     switch (l.kind) {
       case 'C': return '#e9e6df';
       case 'S': return '#9a9892';
+      case 'IND': return '#6c7c8e';
       case 'D': return '#e9e6df';
       default: return '#6f98c7';
     }
@@ -135,7 +144,8 @@ export default function Sankey({
     const i = l.i, j = l.j;
     const pi = result.partners[i];
     if (l.kind === 'C') return `C${i + 1} — Esborso ${PARTNERS[i].name}: ${fmtEur(pi.C)}`;
-    if (l.kind === 'S') return `Hub Startup → Pool P${i + 1}: co-investimento S${i + 1} + indotto = ${fmtEur(pi.P - pi.C)}`;
+    if (l.kind === 'S') return `Hub Startup → Pool P${i + 1}: co-investimento Startup S${i + 1} = ${fmtEur(l.value)}`;
+    if (l.kind === 'IND') return `Indotto Turismo (2,408×) + Risparmio Pubblico → Pool P${i + 1}: ${fmtEur(l.value)}`;
     if (l.kind === 'D') return `Valore diretto P${i + 1} → ${PARTNERS[i].name}: ${fmtEur(pi.P)}`;
     return `Spillover ${PARTNERS[i].short} → ${PARTNERS[j].short}: α ${ALPHA[i][j].toFixed(2)} × P${i + 1} ${fmtEur(pi.P)} = ${fmtEur(result.matrix[i][j])}`;
   };
@@ -206,17 +216,17 @@ export default function Sankey({
             const node = n as N;
             const x0 = node.x0 ?? 0, x1 = node.x1 ?? 0, y0 = node.y0 ?? 0, y1 = node.y1 ?? 0;
             const h = Math.max(2, y1 - y0);
-            const isLeft = node.kind === 'L' || node.kind === 'HUB';
+            const isLeft = node.kind === 'L' || node.kind === 'HUB' || node.kind === 'IND';
             const isRight = node.kind === 'R';
             const p = node.idx >= 0 ? result.partners[node.idx] : null;
             const focused =
               (focus?.type === 'out' && (node.kind === 'L' || node.kind === 'P') && node.idx === focus.i) ||
               (focus?.type === 'in' && node.kind === 'R' && node.idx === focus.j) ||
               (focus?.type === 'cell' && ((node.kind === 'P' && node.idx === focus.i) || (node.kind === 'R' && node.idx === focus.j)));
-            const fill = node.kind === 'HUB' ? '#8fb0d6' : node.kind === 'P' ? '#e9e6df' : node.kind === 'R' ? '#8fb0d6' : '#e9e6df';
+            const fill = node.kind === 'HUB' ? '#8fb0d6' : node.kind === 'IND' ? '#6c7c8e' : node.kind === 'P' ? '#e9e6df' : node.kind === 'R' ? '#8fb0d6' : '#e9e6df';
             const valueText =
               node.kind === 'L' ? fmtCompact(p!.C)
-              : node.kind === 'HUB' ? fmtCompact(node.value || 0)
+              : node.kind === 'HUB' || node.kind === 'IND' ? fmtCompact(node.value || 0)
               : node.kind === 'P' ? fmtCompact(p!.P)
               : fmtCompact(p!.vEsteso);
             const interactive = node.kind === 'L' || node.kind === 'R' || node.kind === 'P';
@@ -260,7 +270,7 @@ export default function Sankey({
                 {/* label */}
                 <text
                   x={isLeft ? x0 - 10 : isRight ? x1 + 10 : (x0 + x1) / 2}
-                  y={labelY - (node.kind === 'P' ? 4 : 2)}
+                  y={node.kind === 'IND' ? labelY - 10 : labelY - (node.kind === 'P' ? 4 : 2)}
                   textAnchor={isLeft ? 'end' : isRight ? 'start' : 'middle'}
                   fontSize={node.kind === 'P' ? 10 : 12}
                   fontWeight={600}
@@ -269,12 +279,21 @@ export default function Sankey({
                   className="transition-all duration-300"
                   dy={node.kind === 'P' ? -h / 2 - 6 : 0}
                 >
-                  {node.kind === 'P' ? `P${node.idx + 1}` : node.label}
+                  {node.kind === 'P' ? (
+                    `P${node.idx + 1}`
+                  ) : node.kind === 'IND' ? (
+                    <>
+                      <tspan x={x0 - 10}>Indotto Turismo</tspan>
+                      <tspan x={x0 - 10} dy={14}>+ Risparmio Pubblico</tspan>
+                    </>
+                  ) : (
+                    node.label
+                  )}
                 </text>
                 {node.kind !== 'P' && (
                   <text
                     x={isLeft ? x0 - 10 : x1 + 10}
-                    y={labelY + 12}
+                    y={node.kind === 'IND' ? labelY + 18 : labelY + 12}
                     textAnchor={isLeft ? 'end' : 'start'}
                     fontSize={11}
                     fill={node.kind === 'R' ? '#8fb0d6' : '#e9e6df'}
@@ -282,7 +301,7 @@ export default function Sankey({
                     fontFamily="JetBrains Mono, monospace"
                     className="transition-all duration-300"
                   >
-                    {node.kind === 'HUB' ? `+ ${valueText}` : valueText}
+                    {node.kind === 'HUB' || node.kind === 'IND' ? `+ ${valueText}` : valueText}
                   </text>
                 )}
               </g>
@@ -307,7 +326,8 @@ export default function Sankey({
 
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-cream/60">
         <span className="inline-flex items-center gap-2"><span className="h-2 w-5 rounded bg-cream/70" /> Esborso Cᵢ / Valore diretto Pᵢ</span>
-        <span className="inline-flex items-center gap-2"><span className="h-2 w-5 rounded bg-[#9a9892]/60" /> Co-investimento Startup Sᵢ + indotto</span>
+        <span className="inline-flex items-center gap-2"><span className="h-2 w-5 rounded bg-[#9a9892]/60" /> Co-investimento Startup Sᵢ</span>
+        <span className="inline-flex items-center gap-2"><span className="h-2 w-5 rounded bg-[#6c7c8e]/70" /> Indotto Turismo + Risparmio Pubblico</span>
         <span className="inline-flex items-center gap-2"><span className="h-2 w-5 rounded bg-gradient-to-r from-azzurro-2 to-azzurro" /> Spillover α × Pᵢ {!networkEffect && '(disattivati)'}</span>
         <span className="ml-auto hidden sm:inline">Hover a sinistra → Out-Flow · Hover a destra → In-Flow</span>
       </div>

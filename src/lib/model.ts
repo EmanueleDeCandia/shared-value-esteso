@@ -5,17 +5,20 @@
 
 export const TOR_VERGATA = 2.408; // moltiplicatore macroeconomico Università Tor Vergata / Ministero del Turismo
 export const S_TECH = 90_000; // infrastruttura digitale, piattaforma welfare, piattaforme e strumenti MarTech, Web Space CSRD/WICI
-export const PMI_UNIT_COST = 1_100; // costo digitalizzazione MarTech per micro-impresa (Profilo 1, 1/10 del benchmark PID)
+export const S_FONDAZIONE_TECH = 137_000; // piattaforma tecnologica Pay per Outcome / Costo per Outcome, metodi ed engagement nuovi Partner
+export const PMI_UNIT_COST = 1_100; // costo digitalizzazione MarTech per micro-impresa (1/10 del benchmark PID)
+export const COORD_EVENTI_PER_SPETTACOLO = 3_000; // co-investimento Startup per Coordinamento (Spettacoli) e Gestione (Eventi) per spettacolo
 export const MARCHESTORIE_PER_COMUNE = 10_000;
 export const PID_PUBLIC_PER_PMI = 11_000;
 
 export type PartnerId = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface SimState {
-  // Profilo 1 — Unioni di Comuni (Monti Azzurri)
+  // Profilo 1 — Unioni di Comuni (Pilota Monti Azzurri + 4 Unioni)
   nSpett1: number;
   cUnione: number;
   nPmi1: number;
+  sovReg: number; // Costo Nuova Sovvenzione richiesta alla Regione Marche (1.000–9.000 €)
   // Profilo 2 — Regione Marche
   nUnioni: number;
   nCom: number;
@@ -42,13 +45,14 @@ export const DEFAULT_STATE: SimState = {
   nSpett1: 6,
   cUnione: 3000,
   nPmi1: 10,
+  sovReg: 3000,
   nUnioni: 4,
   nCom: 8,
   nPmi2: 5,
   nAdd: 2500,
   vNom: 75,
   tRed: 20,
-  nSpett4: 8,
+  nSpett4: 20,
   cOut: 3000,
   bMedia: 25000,
   nImp: 50,
@@ -68,10 +72,10 @@ export interface PartnerMeta {
 }
 
 export const PARTNERS: PartnerMeta[] = [
-  { id: 1, short: 'Unioni', name: 'Unioni di Comuni', sub: 'Pilota: Unione dei Monti Azzurri', track: 1, role: 'Luoghi, palcoscenici, ospitalità' },
+  { id: 1, short: 'Unioni', name: 'Unioni di Comuni', sub: 'Pilota Monti Azzurri (10 PMI) + 4 Unioni (5 PMI/Unione)', track: 1, role: 'Luoghi, palcoscenici, ospitalità' },
   { id: 2, short: 'Regione', name: 'Regione Marche', sub: 'Co-promotore dello sviluppo in 4 Province', track: 2, role: 'Legittimazione e cornice territoriale' },
   { id: 3, short: 'Az. Pubbliche', name: 'Aziende Pubbliche', sub: 'Università, Aziende Sanitarie', track: 1, role: 'Solo Voucher Welfare ai propri addetti' },
-  { id: 4, short: 'Fondazione', name: 'Fondazione Bancaria', sub: 'Pay per Outcome certificato', track: 1, role: 'Produzione culturale e Matching Grant' },
+  { id: 4, short: 'Fondazione', name: 'Fondazione Bancaria', sub: 'Pay per Outcome: Spettacoli aggiuntivi (non coperti da sovvenzioni pubbliche) del giorno successivo', track: 1, role: 'Produzione culturale e Matching Grant' },
   { id: 5, short: 'CSR Media', name: 'Imprese CSR', sub: 'Branding istituzionale — Budget Media', track: 2, role: 'Traffico qualificato e posizionamento' },
   { id: 6, short: 'Shared Value', name: 'Imprese Shared Value', sub: 'Co-promotori (Gruppo ILL), (Gruppo EXE), Rete PMI CSR', track: 1, role: 'Motore netto di domanda e infrastruttura' },
 ];
@@ -79,14 +83,15 @@ export const PARTNERS: PartnerMeta[] = [
 /** Coefficienti di assorbimento α(i→j) — indici di fruibilità di beni non rivali */
 export const ALPHA: number[][] = [
   [0, 0.4, 0.25, 0.3, 0.2, 0.3],
-  [0.25, 0, 0.1, 0.15, 0.15, 0.15],
+  [0.5, 0, 0.1, 0.1, 0.15, 0.15], // Regione Marche: somma = 1,00
   [0.6, 0.5, 0, 0.2, 0.15, 0.15],
   [0.5, 0.45, 0.25, 0, 0.25, 0.3],
   [0.7, 0.75, 0.2, 0.45, 0, 0.4],
-  [0.65, 0.7, 0.35, 0.3, 0.3, 0],
+  [0.65, 0.6, 0.35, 0.3, 0.3, 0],
 ];
 
 export interface FormulaRow {
+  code?: string;
   label: string;
   formula: string;
   value: number;
@@ -121,6 +126,10 @@ export interface SimResult {
   vRete: number;
   lDiretta: number;
   lEco: number;
+  unioniSplit: {
+    pilota: { C: number; S: number; P: number; formulas: FormulaRow[] };
+    altre: { C: number; S: number; P: number; formulas: FormulaRow[] };
+  };
   extra: {
     W: number;
     co2: number;
@@ -133,18 +142,45 @@ export interface SimResult {
 
 const safeDiv = (a: number, b: number) => (b > 0 ? a / b : 0);
 
-export function computeProfiles(s: SimState): { profiles: ProfileResult[]; extra: SimResult['extra'] } {
-  // Profilo 1
-  const C1 = s.nSpett1 * s.cUnione;
-  const S1 = s.nPmi1 * PMI_UNIT_COST;
-  const P1 = C1 + S1;
+export function computeProfiles(s: SimState): {
+  profiles: ProfileResult[];
+  unioniSplit: SimResult['unioniSplit'];
+  extra: SimResult['extra'];
+} {
+  // 1a — Unione Monti Azzurri (Pilota, 100% su P1a perché escluso da P2)
+  const C1pilota = s.nSpett1 * s.cUnione; // Unico esborso Unione: Costo per Outcome → entrata Startup
+  const S1pmiPilota = s.nPmi1 * PMI_UNIT_COST; // 1/10 PID Pilota (10 PMI)
+  const S1coordPilota = s.nSpett1 * COORD_EVENTI_PER_SPETTACOLO; // Coordinamento (Spettacoli) + Gestione (Eventi)
+  const S1pilota = S1pmiPilota + S1coordPilota;
+  const Sov1pilota = s.nCom * s.sovReg; // Entrata Comuni da Regione Marche (non esborso Comuni)
+  const R_MS_pilota = s.nCom * Math.max(0, 9_000 - s.sovReg); // Risparmio Pubblico MarcheStorie (9.000 - Sov_reg)
+  const R_PID_pilota = s.nPmi1 * (PID_PUBLIC_PER_PMI - PMI_UNIT_COST); // Risparmio Pubblico PID (9/10)
+  const P1pilota = C1pilota + S1pilota + R_MS_pilota + R_PID_pilota;
 
-  // Profilo 2
+  // 1b — Altre Unioni di Comuni (4 Unioni, Risparmio Pubblico ripartito 50/50 tra P1b e P2)
+  const C1unioni = s.nUnioni * s.nSpett1 * s.cUnione; // Unico esborso Unioni: Costo per Outcome → entrata Startup
+  const S1pmiUnioni = s.nUnioni * s.nPmi2 * PMI_UNIT_COST; // 1/10 PID (5 PMI/Unione)
+  const S1coordUnioni = s.nUnioni * s.nSpett1 * COORD_EVENTI_PER_SPETTACOLO;
+  const S1unioni = S1pmiUnioni + S1coordUnioni;
+  const Sov1unioni = s.nUnioni * s.nCom * s.sovReg; // Entrata Comuni da Regione Marche
+  const R_MS_unioni = s.nUnioni * s.nCom * Math.max(0, 9_000 - s.sovReg);
+  const R_PID_unioni = s.nUnioni * s.nPmi2 * (PID_PUBLIC_PER_PMI - PMI_UNIT_COST);
+  const R_unioni_50 = (R_MS_unioni + R_PID_unioni) * 0.5; // 50% attribuito alle Unioni (zero doppio conteggio)
+  const P1unioni = C1unioni + S1unioni + R_unioni_50;
+
+  // Aggregato Profilo 1 per Matrice 6×6 e Sankey
+  const C1 = C1pilota + C1unioni;
+  const S1 = S1pilota + S1unioni;
+  const P1 = P1pilota + P1unioni;
+
+  // Profilo 2 — Regione Marche (esborso = 1/10 Startup + Sov_reg verso i Comuni; risparmio = 50% sulle 4 Unioni)
   const bMS = s.nUnioni * s.nCom * MARCHESTORIE_PER_COMUNE;
   const bPID = s.nUnioni * s.nPmi2 * PID_PUBLIC_PER_PMI;
-  const P2 = bMS + bPID;
-  const C2 = P2 / 10;
-  const S2 = P2 - C2;
+  const C2base = (bMS + bPID) / 10; // 1/10 quota Startup coperta da Regione
+  const SovTot = Sov1pilota + Sov1unioni; // Esborso Regione Marche verso i Comuni
+  const C2 = C2base + SovTot;
+  const S2 = R_unioni_50; // 50% Risparmio pubblico sulle 4 Unioni (altro 50% è in P1b)
+  const P2 = C2base + S2;
 
   // Profilo 3
   const nBen = s.nAdd * (s.tRed / 100);
@@ -152,9 +188,10 @@ export function computeProfiles(s: SimState): { profiles: ProfileResult[]; extra
   const S3 = C3;
   const P3 = (C3 + S3) * TOR_VERGATA;
 
-  // Profilo 4
+  // Profilo 4 — Fondazione Bancaria
   const C4 = s.nSpett4 * s.cOut;
-  const S4 = C4 * 1.5;
+  const S4coord = s.nSpett4 * COORD_EVENTI_PER_SPETTACOLO;
+  const S4 = S4coord + S_FONDAZIONE_TECH;
   const P4 = C4 + S4;
 
   // Profilo 5
@@ -175,74 +212,103 @@ export function computeProfiles(s: SimState): { profiles: ProfileResult[]; extra
   const co2 = s.km0 ? W * 0.15 * 6 * (50 * 0.29) : 0;
   const P6 = Vtur * TOR_VERGATA + Vkm0 + S_TECH;
 
+  const unioniSplit: SimResult['unioniSplit'] = {
+    pilota: {
+      C: C1pilota,
+      S: S1pilota,
+      P: P1pilota,
+      formulas: [
+        { code: 'C₁a', label: 'Esborso Pilota / Costo per Outcome (→ Startup)', formula: `${s.nSpett1} spett. × ${fmt(s.cUnione)} €`, value: C1pilota, unit: '€' },
+        { code: 'S₁a,pmi', label: `Digitalizzazione PMI Pilota (${s.nPmi1} PMI × 1/10 PID)`, formula: `${s.nPmi1} × 1.100 €`, value: S1pmiPilota, unit: '€' },
+        { code: 'S₁a,coord', label: 'Coordinamento Spettacoli + Gestione Eventi (Startup)', formula: `${s.nSpett1} spett. × 3.000 €`, value: S1coordPilota, unit: '€' },
+        { code: 'R_MS', label: 'Risparmio Pubblico MarcheStorie (9.000 − Sov_reg)', formula: `${s.nCom} Comuni × ${fmt(Math.max(0, 9_000 - s.sovReg))} €`, value: R_MS_pilota, unit: '€' },
+        { code: 'R_PID', label: 'Risparmio Pubblico PID (9/10)', formula: `${s.nPmi1} PMI × 9.900 €`, value: R_PID_pilota, unit: '€' },
+        { code: 'P₁a', label: 'Pool Abilitato Pilota', formula: 'C₁a + S₁a,pmi + S₁a,coord + R_MS + R_PID', value: P1pilota, unit: '€', highlight: true },
+      ],
+    },
+    altre: {
+      C: C1unioni,
+      S: S1unioni,
+      P: P1unioni,
+      formulas: [
+        { code: 'C₁b', label: `Esborso ${s.nUnioni} Unioni / Costo per Outcome (→ Startup)`, formula: `${s.nUnioni} Unioni × ${s.nSpett1} spett. × ${fmt(s.cUnione)} €`, value: C1unioni, unit: '€' },
+        { code: 'S₁b,pmi', label: `Digitalizzazione PMI (${s.nUnioni} × ${s.nPmi2} PMI × 1/10 PID)`, formula: `${s.nUnioni * s.nPmi2} PMI × 1.100 €`, value: S1pmiUnioni, unit: '€' },
+        { code: 'S₁b,coord', label: 'Coordinamento Spettacoli + Gestione Eventi (Startup)', formula: `${s.nUnioni} Unioni × ${s.nSpett1} spett. × 3.000 €`, value: S1coordUnioni, unit: '€' },
+        { code: 'R_MS,50%', label: 'Risparmio Pubblico MarcheStorie (50% quota Unioni)', formula: `50% × ${s.nUnioni * s.nCom} Comuni × ${fmt(Math.max(0, 9_000 - s.sovReg))} €`, value: R_MS_unioni * 0.5, unit: '€' },
+        { code: 'R_PID,50%', label: 'Risparmio Pubblico PID (50% quota Unioni)', formula: `50% × ${s.nUnioni * s.nPmi2} PMI × 9.900 €`, value: R_PID_unioni * 0.5, unit: '€' },
+        { code: 'P₁b', label: `Pool Abilitato ${s.nUnioni} Unioni`, formula: 'C₁b + S₁b,pmi + S₁b,coord + R_MS,50% + R_PID,50%', value: P1unioni, unit: '€', highlight: true },
+      ],
+    },
+  };
+
   const profiles: ProfileResult[] = [
     {
       id: 1, C: C1, S: S1, P: P1,
-      formulas: [
-        { label: 'Esborso Unione (C₁)', formula: `N_spett × C_unione = ${s.nSpett1} × ${fmt(s.cUnione)}`, value: C1, unit: '€' },
-        { label: 'Co-investimento Startup (S₁)', formula: `N_pmi × 1.100 € = ${s.nPmi1} × 1.100`, value: S1, unit: '€' },
-        { label: 'Pool Abilitato (P₁)', formula: 'C₁ + S₁', value: P1, unit: '€', highlight: true },
-      ],
+      formulas: [...unioniSplit.pilota.formulas],
     },
     {
       id: 2, C: C2, S: S2, P: P2,
       formulas: [
-        { label: 'Benchmark MarcheStorie (B_MS)', formula: `N_unioni × N_com × 10.000 € = ${s.nUnioni} × ${s.nCom} × 10.000`, value: bMS, unit: '€' },
-        { label: 'Benchmark PID (B_PID)', formula: `N_unioni × N_pmi × 11.000 € = ${s.nUnioni} × ${s.nPmi2} × 11.000`, value: bPID, unit: '€' },
-        { label: 'Costo per Outcome Regione (C₂)', formula: '(B_MS + B_PID) / 10', value: C2, unit: '€' },
-        { label: 'Risparmio pubblico abilitato (S₂)', formula: '(B_MS + B_PID) − C₂', value: S2, unit: '€' },
-        { label: 'Pool Abilitato (P₂)', formula: 'B_MS + B_PID', value: P2, unit: '€', highlight: true },
+        { code: 'B_MS', label: 'Benchmark MarcheStorie', formula: `N_unioni × N_com × 10.000 € = ${s.nUnioni} × ${s.nCom} × 10.000`, value: bMS, unit: '€' },
+        { code: 'B_PID', label: 'Benchmark PID', formula: `N_unioni × N_pmi × 11.000 € = ${s.nUnioni} × ${s.nPmi2} × 11.000`, value: bPID, unit: '€' },
+        { code: 'C₂,base', label: 'Quota Startup coperta da Regione (1/10 → Startup)', formula: '1.000 €/Comune + 1.100 €/PMI = (B_MS + B_PID) / 10', value: C2base, unit: '€' },
+        { code: 'Sov_reg', label: 'Sovvenzioni erogate ai Comuni (esborso Regione)', formula: `${(1 + s.nUnioni) * s.nCom} Comuni × ${fmt(s.sovReg)} €`, value: SovTot, unit: '€' },
+        { code: 'C₂', label: 'Esborso complessivo Regione Marche', formula: 'C₂,base + Sov_reg', value: C2, unit: '€' },
+        { code: 'S₂', label: 'Risparmio pubblico attribuito a Regione (50% 4 Unioni)', formula: '50% × (R_MS,unioni + R_PID,unioni)', value: S2, unit: '€' },
+        { code: 'P₂', label: 'Pool Abilitato (senza doppio conteggio)', formula: 'C₂,base + S₂', value: P2, unit: '€', highlight: true },
       ],
     },
     {
       id: 3, C: C3, S: S3, P: P3,
       formulas: [
-        { label: 'Beneficiari effettivi (N_ben)', formula: `N_add × T_red = ${fmt(s.nAdd)} × ${s.tRed}%`, value: nBen, unit: 'n' },
-        { label: 'Voucher Welfare redenti (C₃)', formula: `N_ben × V_nom = ${fmt(nBen)} × ${s.vNom} €  (≈ ${fmtDec(safeDiv(C3, s.nAdd))} €/addetto)`, value: C3, unit: '€' },
-        { label: 'Matching Grant 100% Startup (S₃)', formula: 'S₃ = C₃', value: S3, unit: '€' },
-        { label: 'Pool Abilitato (P₃)', formula: '(C₃ + S₃) × 2,408 (Tor Vergata)', value: P3, unit: '€', highlight: true },
+        { code: 'N_ben', label: 'Beneficiari effettivi', formula: `N_add × T_red = ${fmt(s.nAdd)} × ${s.tRed}%`, value: nBen, unit: 'n' },
+        { code: 'C₃', label: 'Voucher Welfare redenti', formula: `N_ben × V_nom = ${fmt(nBen)} × ${s.vNom} €  (≈ ${fmtDec(safeDiv(C3, s.nAdd))} €/addetto)`, value: C3, unit: '€' },
+        { code: 'S₃', label: 'Matching Grant 100% Startup', formula: 'S₃ = C₃', value: S3, unit: '€' },
+        { code: 'P₃', label: 'Pool Abilitato', formula: '(C₃ + S₃) × 2,408 (Tor Vergata)', value: P3, unit: '€', highlight: true },
       ],
     },
     {
       id: 4, C: C4, S: S4, P: P4,
       formulas: [
-        { label: 'Pay per Outcome (C₄)', formula: `N_spett × C_out = ${s.nSpett4} × ${fmt(s.cOut)}`, value: C4, unit: '€' },
-        { label: 'Co-investimento Startup (S₄)', formula: 'C₄ × 1,5', value: S4, unit: '€' },
-        { label: 'Pool Abilitato (P₄)', formula: 'C₄ + S₄', value: P4, unit: '€', highlight: true },
+        { code: 'C₄', label: 'Pay per Outcome: spettacoli aggiuntivi giorno successivo', formula: `N_spett × C_out = ${s.nSpett4} × ${fmt(s.cOut)}`, value: C4, unit: '€' },
+        { code: 'S₄,coord', label: 'Coordinamento Spettacoli + Gestione Eventi (Startup)', formula: `${s.nSpett4} spett. × 3.000 €`, value: S4coord, unit: '€' },
+        { code: 'S₄,tech', label: 'Piattaforma Pay per Outcome, metodi ed engagement Partner', formula: 'Piattaforma tecnologica dedicata', value: S_FONDAZIONE_TECH, unit: '€' },
+        { code: 'S₄', label: 'Co-investimento Startup', formula: 'S₄,coord + S₄,tech', value: S4, unit: '€' },
+        { code: 'P₄', label: 'Pool Abilitato', formula: 'C₄ + S₄', value: P4, unit: '€', highlight: true },
       ],
     },
     {
       id: 5, C: C5, S: S5, P: P5,
       formulas: [
-        { label: 'Budget Media Impresa (C₅)', formula: 'B_media', value: C5, unit: '€' },
-        { label: 'Co-investimento Startup (S₅)', formula: 'B_media × 2 (creatività, piattaforma, editoria, misurazione)', value: S5, unit: '€' },
-        { label: 'Pool Abilitato (P₅)', formula: 'C₅ + S₅ = 3 × B_media', value: P5, unit: '€', highlight: true },
+        { code: 'C₅', label: 'Budget Media Impresa', formula: 'B_media', value: C5, unit: '€' },
+        { code: 'S₅', label: 'Co-investimento Startup', formula: 'B_media × 2 (creatività, piattaforma, editoria, misurazione)', value: S5, unit: '€' },
+        { code: 'P₅', label: 'Pool Abilitato', formula: 'C₅ + S₅ = 3 × B_media', value: P5, unit: '€', highlight: true },
       ],
     },
     {
       id: 6, C: C6, S: S6, P: P6,
       formulas: [
-        { label: 'Lavoratori (W)', formula: `N_imp × N_dip = ${s.nImp} × ${s.nDip}`, value: W, unit: 'n' },
-        { label: 'Voucher Pernottamento (C₆,hotel)', formula: 'W × 22% × 50 € = W × 11 €', value: C6hotel, unit: '€' },
-        { label: 'Voucher Aperitivo/Cena (C₆,food)', formula: 'W × 32% × 25 € = W × 8 €', value: C6food, unit: '€' },
-        { label: 'Esborso Imprese (C₆)', formula: 'C₆,hotel + C₆,food = W × 19 €  (Gruppo ILL 0 €, Gruppo EXE 0 € fissi)', value: C6, unit: '€' },
-        { label: 'Matching Grant Startup (MG₆)', formula: '1:1 solo Pernottamento: W × 22% × 50 € (25 € dip. + 25 € accomp.), zero seconde notti', value: MG6, unit: '€' },
-        { label: 'Co-investimento Startup (S₆)', formula: 'MG₆ + S_tech (90.000 €) — esclusa spesa privata', value: S6, unit: '€' },
-        { label: 'Spesa privata accompagnatore (V_priv)', formula: 'W × 11 € (stessa notte) + W × 8 € (cena) = W × 19 €', value: Vpriv, unit: '€' },
-        { label: 'Spesa turistica e culturale (V_tur)', formula: 'C₆ + V_priv + MG₆ = W × 49 €', value: Vtur, unit: '€' },
-        { label: 'Fatturato Filiera Km 0 (V_km0)', formula: s.km0 ? 'W × 15% × 6 ordini × 30 € = W × 27 €' : 'Km 0 disattivato', value: Vkm0, unit: '€' },
-        { label: 'CO₂ evitata', formula: s.km0 ? '(W × 15% × 6) × (50 km × 0,29 kg/km) = W × 13,05 kg' : 'Km 0 disattivato', value: co2, unit: 'kg' },
-        { label: 'Valore Diretto (P₆)', formula: '(V_tur × 2,408) + V_km0 + S_tech', value: P6, unit: '€', highlight: true },
+        { code: 'W', label: 'Lavoratori', formula: `N_imp × N_dip = ${s.nImp} × ${s.nDip}`, value: W, unit: 'n' },
+        { code: 'C₆,hotel', label: 'Voucher Pernottamento', formula: 'W × 22% × 50 € = W × 11 €', value: C6hotel, unit: '€' },
+        { code: 'C₆,food', label: 'Voucher Aperitivo/Cena', formula: 'W × 32% × 25 € = W × 8 €', value: C6food, unit: '€' },
+        { code: 'C₆', label: 'Esborso Imprese', formula: 'C₆,hotel + C₆,food = W × 19 €  (Gruppo ILL 0 €, Gruppo EXE 0 € fissi)', value: C6, unit: '€' },
+        { code: 'MG₆', label: 'Matching Grant Startup', formula: '1:1 solo Pernottamento: W × 22% × 50 € (25 € dip. + 25 € accomp.), zero seconde notti', value: MG6, unit: '€' },
+        { code: 'S₆', label: 'Co-investimento Startup', formula: 'MG₆ + S_tech (90.000 €) — esclusa spesa privata', value: S6, unit: '€' },
+        { code: 'V_priv', label: 'Spesa privata accompagnatore', formula: 'W × 11 € (stessa notte) + W × 8 € (cena) = W × 19 €', value: Vpriv, unit: '€' },
+        { code: 'V_tur', label: 'Spesa turistica e culturale', formula: 'C₆ + V_priv + MG₆ = W × 49 €', value: Vtur, unit: '€' },
+        { code: 'V_km0', label: 'Fatturato Filiera Km 0', formula: s.km0 ? 'W × 15% × 6 ordini × 30 € = W × 27 €' : 'Km 0 disattivato', value: Vkm0, unit: '€' },
+        { code: 'CO₂', label: 'CO₂ evitata', formula: s.km0 ? '(W × 15% × 6) × (50 km × 0,29 kg/km) = W × 13,05 kg' : 'Km 0 disattivato', value: co2, unit: 'kg' },
+        { code: 'P₆', label: 'Valore Diretto', formula: '(V_tur × 2,408) + V_km0 + S_tech', value: P6, unit: '€', highlight: true },
       ],
     },
   ];
 
   const impressions = Math.round((s.bMedia / 25000) * 10_000_000);
-  return { profiles, extra: { W, co2, bMS, bPID, nBen, impressions } };
+  return { profiles, unioniSplit, extra: { W, co2, bMS, bPID, nBen, impressions } };
 }
 
 export function simulate(s: SimState): SimResult {
-  const { profiles, extra } = computeProfiles(s);
+  const { profiles, unioniSplit, extra } = computeProfiles(s);
   const n = 6;
   const matrix: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
 
@@ -297,6 +363,7 @@ export function simulate(s: SimState): SimResult {
     vRete,
     lDiretta: safeDiv(pEco, cEco),
     lEco: safeDiv(vRete, cEco),
+    unioniSplit,
     extra,
   };
 }

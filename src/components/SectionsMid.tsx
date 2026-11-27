@@ -147,8 +147,8 @@ const DETAILS: Record<number, PartnerDetail> = {
   },
   4: {
     ruolo: 'Finanziatore Pay per Outcome legato a esiti certificati, garante della qualità culturale della programmazione.',
-    contributo: 'Pay per Outcome su spettacoli/artisti, quota Matching Grant, licenze editoria digitale.',
-    coinv: 'Gestione operativa, piattaforma MarTech, monitoraggio certificato degli outcome.',
+    contributo: 'Pay per Outcome su spettacoli aggiuntivi (non coperti da sovvenzioni pubbliche) del giorno successivo, quota Matching Grant, licenze editoria digitale.',
+    coinv: 'Coordinamento e gestione eventi (3.000 €/spettacolo), piattaforma tecnologica Pay per Outcome / Costo per Outcome (137.000 €) con strumenti, metodi ed engagement nuovi Partner.',
     out: 'Produzione culturale, co-copertura Matching Grant e contenuti editoriali che alimentano l\'attrattività dell\'intero ecosistema.',
     inflow: 'Amplificazione mediatica (10 M impression) dalle Imprese CSR e moltiplicazione del pubblico tramite i canali Welfare dei Partner industriali e pubblici.',
     netto: 'Ogni euro erogato a risultato certificato viene amplificato da media, welfare e infrastruttura digitale altrui.',

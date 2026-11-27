@@ -7,13 +7,41 @@ import Matrix from './Matrix';
 
 type NumKey = Exclude<keyof SimState, 'km0' | 'active' | 'networkEffect'>;
 
-interface SliderDef { key: NumKey; label: string; min: number; max: number; step: number; unit?: string; hint?: string }
+interface SliderDef { key: NumKey; label: string; min: number; max: number; step: number; unit?: string; hint?: string | ((value: number) => string) }
 
-const SLIDERS: Record<PartnerId, SliderDef[]> = {
-  1: [
-    { key: 'nSpett1', label: 'Spettacoli (N_spett)', min: 1, max: 8, step: 1 },
-    { key: 'cUnione', label: 'Contributo Unione per spettacolo (C_unione)', min: 1500, max: 5000, step: 100, unit: '€' },
-    { key: 'nPmi1', label: 'Micro-imprese digitalizzate (N_pmi)', min: 2, max: 20, step: 1, hint: 'Concentrazione del pilota di lancio (Monti Azzurri)' },
+type TabId = '1a' | '1b' | 2 | 3 | 4 | 5 | 6;
+
+interface TabMeta {
+  id: TabId;
+  partnerId: PartnerId;
+  chip: string;
+  name: string;
+  sub: string;
+}
+
+const TABS: TabMeta[] = [
+  { id: '1a', partnerId: 1, chip: '1a. Monti Azzurri', name: 'Unione Monti Azzurri (Pilota)', sub: 'Pilota sperimentale — 10 PMI digitalizzate' },
+  { id: '1b', partnerId: 1, chip: '1b. Altre Unioni', name: 'Altre Unioni di Comuni (4)', sub: '4 Unioni nelle altre Province — 5 PMI/Unione' },
+  { id: 2, partnerId: 2, chip: '2. Regione', name: PARTNERS[1].name, sub: PARTNERS[1].sub },
+  { id: 3, partnerId: 3, chip: '3. Az. Pubbliche', name: PARTNERS[2].name, sub: PARTNERS[2].sub },
+  { id: 4, partnerId: 4, chip: '4. Fondazione', name: PARTNERS[3].name, sub: PARTNERS[3].sub },
+  { id: 5, partnerId: 5, chip: '5. CSR Media', name: PARTNERS[4].name, sub: PARTNERS[4].sub },
+  { id: 6, partnerId: 6, chip: '6. Shared Value', name: PARTNERS[5].name, sub: PARTNERS[5].sub },
+];
+
+const SLIDERS: Record<TabId, SliderDef[]> = {
+  '1a': [
+    { key: 'nSpett1', label: 'Spettacoli Pilota (N_spett)', min: 1, max: 8, step: 1 },
+    { key: 'cUnione', label: 'Costo per Outcome / Spettacolo (C_unione)', min: 1500, max: 5000, step: 100, unit: '€', hint: 'Entrata della Startup per spettacolo' },
+    { key: 'nPmi1', label: 'PMI digitalizzate Pilota (N_pmi)', min: 2, max: 20, step: 1, hint: 'Concentrazione del pilota di lancio (Monti Azzurri)' },
+    { key: 'sovReg', label: 'Nuova Sovvenzione Regionale (Sov_reg)', min: 1000, max: 9000, step: 500, unit: '€', hint: (v) => `Quota dei Comuni richiesta alla Regione Marche rispetto al Benchmark di MarcheStorie: Risparmio del ${Math.round(((9000 - v) / 10000) * 100)}% su ${fmtEur(v + 1000)} totali` },
+  ],
+  '1b': [
+    { key: 'nUnioni', label: 'Altre Unioni di Comuni (N_unioni)', min: 1, max: 10, step: 1 },
+    { key: 'nSpett1', label: 'Spettacoli per Unione (N_spett)', min: 1, max: 8, step: 1 },
+    { key: 'cUnione', label: 'Costo per Outcome / Spettacolo (C_unione)', min: 1500, max: 5000, step: 100, unit: '€', hint: 'Entrata della Startup per spettacolo' },
+    { key: 'nPmi2', label: 'PMI digitalizzate per Unione (N_pmi)', min: 2, max: 20, step: 1, hint: 'Default 5 PMI/Unione (20 PMI su 4 Unioni)' },
+    { key: 'sovReg', label: 'Nuova Sovvenzione Regionale (Sov_reg)', min: 1000, max: 9000, step: 500, unit: '€', hint: (v) => `Quota dei Comuni richiesta alla Regione Marche rispetto al Benchmark di MarcheStorie: Risparmio del ${Math.round(((9000 - v) / 10000) * 100)}% su ${fmtEur(v + 1000)} totali` },
   ],
   2: [
     { key: 'nUnioni', label: 'Unioni di Comuni (N_unioni)', min: 1, max: 10, step: 1 },
@@ -26,7 +54,7 @@ const SLIDERS: Record<PartnerId, SliderDef[]> = {
     { key: 'tRed', label: 'Tasso di redenzione (T_red)', min: 5, max: 30, step: 1, unit: '%' },
   ],
   4: [
-    { key: 'nSpett4', label: 'Spettacoli finanziati (N_spett)', min: 2, max: 20, step: 1 },
+    { key: 'nSpett4', label: 'Spettacoli aggiuntivi finanziati (N_spett)', min: 2, max: 50, step: 1, hint: 'Spettacoli del giorno successivo non coperti da sovvenzioni pubbliche' },
     { key: 'cOut', label: 'Costo per outcome (C_out)', min: 2500, max: 10000, step: 250, unit: '€' },
   ],
   5: [
@@ -59,10 +87,10 @@ function Slider({ def, value, onChange }: { def: SliderDef; value: number; onCha
         style={{ '--pct': `${pct}%`, '--thumb-ring': '#121212' } as CSSProperties}
         aria-valuetext={`${value}${def.unit ?? ''}`}
       />
-      <div className="mt-1.5 flex justify-between font-mono text-[10px] text-cream/35">
-        <span>{def.unit === '€' ? fmtEur(def.min) : def.min}{def.unit === '%' ? ' %' : ''}</span>
-        {def.hint && <span className="text-cream/45">{def.hint}</span>}
-        <span>{def.unit === '€' ? fmtEur(def.max) : def.max}{def.unit === '%' ? ' %' : ''}</span>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-cream/35">
+        <span className="shrink-0">{def.unit === '€' ? fmtEur(def.min) : def.min}{def.unit === '%' ? ' %' : ''}</span>
+        {def.hint && <span className="text-center text-cream/45">{typeof def.hint === 'function' ? def.hint(value) : def.hint}</span>}
+        <span className="shrink-0">{def.unit === '€' ? fmtEur(def.max) : def.max}{def.unit === '%' ? ' %' : ''}</span>
       </div>
     </div>
   );
@@ -81,7 +109,7 @@ function KPI({ label, value, sub, accent, big }: { label: string; value: string;
 
 export default function Simulator() {
   const [state, setState] = useState<SimState>(DEFAULT_STATE);
-  const [profile, setProfile] = useState<PartnerId>(1);
+  const [tab, setTab] = useState<TabId>('1a');
   const [focus, setFocus] = useState<Focus>(null);
   const [selected, setSelected] = useState<{ i: number; j: number } | null>(null);
 
@@ -91,8 +119,17 @@ export default function Simulator() {
   const set = <K extends keyof SimState>(k: K, v: SimState[K]) => setState((s) => ({ ...s, [k]: v }));
   const toggleActive = (id: PartnerId) => setState((s) => ({ ...s, active: { ...s.active, [id]: !s.active[id] } }));
 
+  const tabMeta = TABS.find((t) => t.id === tab)!;
+  const profile = tabMeta.partnerId;
   const cur = result.partners[profile - 1];
-  const meta = PARTNERS[profile - 1];
+  const displayC = tab === '1a' ? result.unioniSplit.pilota.C : tab === '1b' ? result.unioniSplit.altre.C : cur.C;
+  const displayS = tab === '1a' ? result.unioniSplit.pilota.S : tab === '1b' ? result.unioniSplit.altre.S : cur.S;
+  const displayP = tab === '1a' ? result.unioniSplit.pilota.P : tab === '1b' ? result.unioniSplit.altre.P : cur.P;
+  const displayInFlow = tab === '1a' || tab === '1b' ? (cur.P > 0 ? cur.inFlow * (displayP / cur.P) : 0) : cur.inFlow;
+  const displayVEsteso = displayP + displayInFlow;
+  const displayLevaDiretta = displayC > 0 ? displayP / displayC : 0;
+  const displayLevaEstesa = displayC > 0 ? displayVEsteso / displayC : 0;
+  const displayFormulas = tab === '1a' ? result.unioniSplit.pilota.formulas : tab === '1b' ? result.unioniSplit.altre.formulas : cur.formulas;
   const isDefault = JSON.stringify(state) === JSON.stringify(DEFAULT_STATE);
 
   return (
@@ -192,30 +229,30 @@ export default function Simulator() {
           <div className="lg:col-span-5">
             <div className="eyebrow mb-4 text-cream/50">Input modificabili — profili 1–6 (default Pilota reale)</div>
             <div role="tablist" aria-label="Profili" className="flex flex-wrap gap-1.5 border-b border-cream/15 pb-4">
-              {PARTNERS.map((p) => (
+              {TABS.map((t) => (
                 <button
-                  key={p.id}
+                  key={t.id}
                   role="tab"
-                  aria-selected={profile === p.id}
-                  onClick={() => setProfile(p.id)}
+                  aria-selected={tab === t.id}
+                  onClick={() => setTab(t.id)}
                   className={cn(
                     'cursor-pointer rounded-full border px-3.5 py-1.5 text-[14px] font-medium transition-all duration-300',
-                    profile === p.id
+                    tab === t.id
                       ? 'border-cream bg-cream text-ink shadow-sm'
                       : 'border-azzurro/65 bg-azzurro/45 text-cream hover:border-azzurro hover:bg-azzurro/65',
-                    !state.active[p.id] && 'opacity-40 line-through',
+                    !state.active[t.partnerId] && 'opacity-40 line-through',
                   )}
                 >
-                  {p.id}. {p.short}
+                  {t.chip}
                 </button>
               ))}
             </div>
 
-            <div key={profile} className="mt-6 animate-[kpi_.4s_ease]">
+            <div key={tab} className="mt-6 animate-[kpi_.4s_ease]">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-semibold tracking-tight">{meta.name}</h3>
-                  <p className="mt-1 text-xs text-cream/50">{meta.sub}</p>
+                  <h3 className="text-xl font-semibold tracking-tight">{tabMeta.name}</h3>
+                  <p className="mt-1 text-xs text-cream/50">{tabMeta.sub}</p>
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-cream/70">
                   <input type="checkbox" className="accent-[#5f86b3]" checked={state.active[profile]} onChange={() => toggleActive(profile)} />
@@ -224,8 +261,8 @@ export default function Simulator() {
               </div>
 
               <div className="mt-7 space-y-7">
-                {SLIDERS[profile].map((d) => (
-                  <Slider key={d.key} def={d} value={state[d.key]} onChange={(v) => set(d.key, v)} />
+                {SLIDERS[tab].map((d) => (
+                  <Slider key={`${tab}-${d.key}`} def={d} value={state[d.key]} onChange={(v) => set(d.key, v)} />
                 ))}
                 {profile === 6 && (
                   <div className="flex items-center justify-between rounded-xl border border-cream/10 px-4 py-3">
@@ -253,9 +290,9 @@ export default function Simulator() {
               </div>
 
               <div className="mt-8 grid grid-cols-3 gap-2">
-                <KPI label={`Esborso C${profile}`} value={fmtCompact(cur.C)} />
-                <KPI label={`Startup S${profile}`} value={fmtCompact(cur.S)} />
-                <KPI label={`Pool P${profile}`} value={fmtCompact(cur.P)} accent />
+                <KPI label={`Esborso C${tab}`} value={fmtCompact(displayC)} />
+                <KPI label={`Startup S${tab}`} value={fmtCompact(displayS)} />
+                <KPI label={`Pool P${tab}`} value={fmtCompact(displayP)} accent />
               </div>
             </div>
           </div>
@@ -263,7 +300,7 @@ export default function Simulator() {
           {/* Formule correnti */}
           <div className="lg:col-span-7">
             <div className="eyebrow mb-4 flex items-center justify-between text-cream/50">
-              <span>Formule correnti — Profilo {profile} (sempre visibili, anti-black-box)</span>
+              <span>Formule correnti — Profilo {tab} (sempre visibili, anti-black-box)</span>
               <span className="font-mono normal-case tracking-normal">aggiornamento live</span>
             </div>
             <div className="rounded-2xl border border-cream/10 bg-ink-2/70 overflow-hidden">
@@ -271,16 +308,20 @@ export default function Simulator() {
                 <thead className="text-cream/45">
                   <tr className="border-b border-cream/10">
                     <th className="px-4 py-3 text-left font-normal eyebrow">Grandezza</th>
+                    <th className="px-3 py-3 text-left font-normal eyebrow">Sigla</th>
                     <th className="px-4 py-3 text-left font-normal eyebrow hidden md:table-cell">Formula</th>
                     <th className="px-4 py-3 text-right font-normal eyebrow">Valore</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {cur.formulas.map((f, i) => (
+                  {displayFormulas.map((f, i) => (
                     <tr key={i} className={cn('border-b border-cream/[0.06] transition-colors', f.highlight ? 'bg-azzurro/10' : 'hover:bg-cream/[0.03]')}>
                       <td className="px-4 py-3 align-top">
                         <div className={cn('font-medium', f.highlight ? 'text-azzurro-2' : 'text-cream/90')}>{f.label}</div>
                         <div className="mt-1 font-mono text-[11px] text-cream/45 md:hidden">{f.formula}</div>
+                      </td>
+                      <td className="px-3 py-3 align-top font-mono text-[10px] tracking-tight text-azzurro-2/85 whitespace-nowrap">
+                        {f.code ?? ''}
                       </td>
                       <td className="hidden px-4 py-3 align-top font-mono text-[11px] text-cream/55 md:table-cell">{f.formula}</td>
                       <td className={cn('px-4 py-3 text-right align-top font-mono tabular whitespace-nowrap', f.highlight ? 'text-azzurro-2 font-semibold' : 'text-cream')}>
@@ -289,19 +330,22 @@ export default function Simulator() {
                     </tr>
                   ))}
                   <tr className="bg-cream/[0.04]">
-                    <td className="px-4 py-3 font-medium">Spillover ricevuto (In-Flow)</td>
-                    <td className="hidden px-4 py-3 font-mono text-[11px] text-cream/55 md:table-cell">Σ<sub>i≠j</sub> α<sub>i→{profile}</sub> × Pᵢ</td>
-                    <td className="px-4 py-3 text-right font-mono tabular text-azzurro-2">{fmtEur(cur.inFlow)}</td>
+                    <td className="px-4 py-3 font-medium">Spillover ricevuto</td>
+                    <td className="px-3 py-3 font-mono text-[10px] tracking-tight text-azzurro-2/85 whitespace-nowrap">In-Flow</td>
+                    <td className="hidden px-4 py-3 font-mono text-[11px] text-cream/55 md:table-cell">Σ<sub>i≠j</sub> α<sub>i→{profile}</sub> × Pᵢ{tab === '1a' || tab === '1b' ? ` (quota ${tab})` : ''}</td>
+                    <td className="px-4 py-3 text-right font-mono tabular text-azzurro-2">{fmtEur(displayInFlow)}</td>
                   </tr>
                   <tr className="bg-cream/[0.04]">
-                    <td className="px-4 py-3 font-medium">Valore Esteso Fruito (V_esteso)</td>
-                    <td className="hidden px-4 py-3 font-mono text-[11px] text-cream/55 md:table-cell">P{profile} + In-Flow</td>
-                    <td className="px-4 py-3 text-right font-mono tabular font-semibold">{fmtEur(cur.vEsteso)}</td>
+                    <td className="px-4 py-3 font-medium">Valore Esteso Fruito</td>
+                    <td className="px-3 py-3 font-mono text-[10px] tracking-tight text-azzurro-2/85 whitespace-nowrap">V_esteso</td>
+                    <td className="hidden px-4 py-3 font-mono text-[11px] text-cream/55 md:table-cell">P{tab} + In-Flow</td>
+                    <td className="px-4 py-3 text-right font-mono tabular font-semibold">{fmtEur(displayVEsteso)}</td>
                   </tr>
                   <tr className="bg-cream/[0.04]">
                     <td className="px-4 py-3 font-medium">Leva Diretta / Leva Reale Estesa</td>
-                    <td className="hidden px-4 py-3 font-mono text-[11px] text-cream/55 md:table-cell">P{profile} / C{profile} · V_esteso / C{profile}</td>
-                    <td className="px-4 py-3 text-right font-mono tabular"><span className="text-cream/60">{fmtX(cur.levaDiretta)}</span> · <span className="text-azzurro-2 font-semibold">{fmtX(cur.levaEstesa)}</span></td>
+                    <td className="px-3 py-3 font-mono text-[10px] tracking-tight text-azzurro-2/85 whitespace-nowrap">Leva</td>
+                    <td className="hidden px-4 py-3 font-mono text-[11px] text-cream/55 md:table-cell">P{tab} / C{tab} · V_esteso / C{tab}</td>
+                    <td className="px-4 py-3 text-right font-mono tabular"><span className="text-cream/60">{fmtX(displayLevaDiretta)}</span> · <span className="text-azzurro-2 font-semibold">{fmtX(displayLevaEstesa)}</span></td>
                   </tr>
                 </tbody>
               </table>
@@ -344,12 +388,18 @@ export default function Simulator() {
           {/* Nota metodologica */}
           <Reveal className="mt-6 grid gap-4 md:grid-cols-3">
             {[
-              ['Pesi α non rivali', 'I coefficienti α(i→j) non sono quote di ripartizione di cassa, ma indici di fruibilità di beni non rivali (campagne, piattaforme, infrastrutture condivise): per questo la somma per riga può superare 1, misurando il risparmio di duplicazione.'],
-              ['Saldo negativo ≠ perdita', 'Un Saldo Netto In − Out negativo (es. Imprese Shared Value) non indica una perdita: segnala che quel Partner agisce da motore netto di domanda per l\'ecosistema, mantenendo una Leva Reale Estesa ampiamente positiva.'],
-              ['Due contabilità affiancate', 'La Panoramica affianca sempre il Valore Economico Netto Diretto (Σ Pᵢ) e il Valore Esteso Fruito / di Rete (Σ Pᵢ + Σ In-Flow). Perimetro: Profilo 1 = concentrazione del pilota (10 PMI, Monti Azzurri); Profilo 2 = media prudenziale regionale (5 PMI/Unione × 4 Unioni = 20 PMI).'],
+              ['Pesi α non rivali', 'I coefficienti α(i→j) non sono quote di ripartizione di cassa, ma indici di fruibilità di beni non rivali (campagne, piattaforme, infrastrutture condivise): per questo la somma per riga può superare 1, misurando sia il risparmio di duplicazione dei costi che il valore creato dalle esternalità positive da coordinamento.'],
+              ['Saldo negativo ≠ perdita', 'Un Saldo Netto In − Out negativo (es. Unioni o Imprese Shared Value) non indica una perdita: segnala che quel Partner agisce da motore netto di esternalità positive per l\'ecosistema, mantenendo un V_esteso e una Leva Reale Estesa ampiamente positivi.'],
+              ['Due contabilità affiancate', 'La Panoramica affianca sempre il Valore Economico Netto Diretto (Σ Pᵢ) e il Valore Esteso Fruito / di Rete (Σ Pᵢ + Σ In-Flow). Perimetro Unioni: 1a = Pilota Monti Azzurri (10 PMI); 1b = altre 4 Unioni (5 PMI/Unione = 20 PMI).'],
+              ['Ripartizione 50/50 del Risparmio', 'Per azzerare ogni doppio conteggio tra P₁ e P₂, il Risparmio Pubblico sulle 4 Unioni (MarcheStorie + PID) è ripartito in somme equivalenti: 50% alle Unioni (P₁b) e 50% alla Regione Marche (P₂). Il Pilota Monti Azzurri (P₁a) resta al 100% su P₁.'],
+              ['Clausola di reinvestimento', 'Il Risparmio Pubblico è un bene pubblico che libera capacità fiscale. Sotto clausola di reinvestimento coordinato verso Partner esistenti o nuovi entranti, esso remunera le esternalità negative da mancato coordinamento risolte dalla Startup.'],
+              ['Esborso Unioni vs Startup', 'L\'unico esborso effettivo delle Unioni è il Costo per Outcome (C₁ = 3.000 €/spettacolo) verso la Startup. La digitalizzazione PMI (1.100 €/PMI = 1/10 PID) e il Coordinamento/Gestione Eventi (3.000 €/spettacolo) sono co-investimenti della Startup (S₁).'],
+              ['Sovvenzione Regionale (Sov_reg)', 'Dei 10.000 € del benchmark MarcheStorie, 1.000 € vanno alla Startup e fino a 9.000 € possono essere richiesti dai Comuni alla Regione. Sov_reg è un\'entrata dei Comuni (non un loro esborso) ed è un esborso della Regione (C₂) che riduce R_MS.'],
+              ['Pesi Regione Marche (Σ = 1,00)', 'La riga Regione Marche somma esattamente a 1,00 (0,50 verso Unioni, 0,10 Az. Pubbliche, 0,10 Fondazione, 0,15 CSR, 0,15 Shared Value), riflettendo legittimazione istituzionale e riallocazione della capacità fiscale senza moltiplicazioni artificiali.'],
+              ['Lettura di V_esteso e Saldo', 'V_esteso = Pⱼ + In-Flow non sottrae l\'Out-Flow perché i beni non rivali ceduti restano fruibili dall\'emittente. Il Saldo In−Out confronta solo esternalità ricevute e cedute: un saldo negativo identifica i principali generatori netti di valore dell\'ecosistema.'],
             ].map(([h, t], i) => (
               <div key={i} className="rounded-2xl border border-cream/10 p-5">
-                <div className="eyebrow text-azzurro-2">Nota metodologica 0{i + 1}</div>
+                <div className="eyebrow text-azzurro-2">Nota metodologica {String(i + 1).padStart(2, '0')}</div>
                 <div className="mt-2 text-sm font-medium">{h}</div>
                 <p className="mt-2 text-[12px] leading-relaxed text-cream/60">{t}</p>
               </div>
@@ -405,7 +455,7 @@ export default function Simulator() {
             </table>
           </div>
           <p className="mt-3 text-[11px] text-cream/40">
-            Assunzioni fisse: moltiplicatore Tor Vergata 2,408×; S_tech 90.000 €; 1.100 €/micro-impresa digitalizzata; MarcheStorie 10.000 €/Comune; PID 11.000 € pubblici/PMI; Voucher Pernottamento 22% × 50 €, Aperitivo/Cena 32% × 25 €; Km 0 15% × 6 ordini × 30 €; CO₂ 50 km × 0,29 kg/km per ordine.
+            Assunzioni fisse: moltiplicatore Tor Vergata 2,408×; S_tech 90.000 €; Piattaforma Fondazione Pay per Outcome 137.000 €; 1.100 €/micro-impresa digitalizzata (1/10 PID); Coordinamento & Gestione Eventi Startup 3.000 €/spettacolo; MarcheStorie 10.000 €/Comune (1.000 € Startup + fino a 9.000 € Sov_reg); PID 11.000 € pubblici/PMI; Voucher Pernottamento 22% × 50 €, Aperitivo/Cena 32% × 25 €; Km 0 15% × 6 ordini × 30 €; CO₂ 50 km × 0,29 kg/km per ordine.
             {state.km0 && state.active[6] && <> CO₂ evitata nello scenario corrente: <span className="text-cream/70">{fmt(result.extra.co2)} kg</span>.</>}
           </p>
         </div>

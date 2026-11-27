@@ -115,8 +115,8 @@ export function Impact() {
             </Reveal>
             <Reveal delay={100} className="rounded-2xl glass-dark p-6">
               <div className="eyebrow text-cream/50">Leva operativa Startup (SROI implicito)</div>
-              <div className="mt-3 text-5xl font-semibold tracking-tighter tabular">5,3× – 6,4×</div>
-              <p className="mt-3 text-sm text-cream/65">A fronte di 361.000 € di costi complessivi della Startup (100.000 € 3 FTE + 88.000 € Matching Grant + 50.000 € Adtech + 90.000 € Martech + 11.000 € 10 PMI Monti Azzurri + 22.000 € 20 PMI Marche).</p>
+              <div className="mt-3 text-5xl font-semibold tracking-tighter tabular">3,4× – 4,1×</div>
+              <p className="mt-3 text-[12px] text-cream/65">A fronte di 558.000 € di costi complessivi della Startup (100.000 € 3 FTE + 88.000 € Matching Grant + 50.000 € Adtech + 90.000 € Martech + 11.000 € 10 PMI Monti Azzurri + 22.000 € 20 PMI Marche + 60.000 € Coord. Fondazione + 137.000 € Piattaforma Pay per Outcome).</p>
             </Reveal>
             <Reveal delay={180} className="rounded-2xl glass-dark p-6">
               <div className="eyebrow text-cream/50">CO₂ evitata (Km 0)</div>
